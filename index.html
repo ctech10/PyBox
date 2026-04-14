@@ -69,11 +69,11 @@
     height: calc(100% - 60px - 53px);
   }
   main.layout-bottom {
-    grid-template-rows: 1fr 300px;
+    grid-template-rows: 1fr 6px var(--results-h, 300px);
     grid-template-columns: 1fr;
   }
   main.layout-right {
-    grid-template-columns: 1fr 460px;
+    grid-template-columns: 1fr 6px var(--results-w, 460px);
     grid-template-rows: 1fr;
   }
   .editor-panel { display: flex; flex-direction: column; padding: 12px; min-height: 0; min-width: 0; }
@@ -95,13 +95,12 @@
     display: grid; padding: 12px; gap: 12px; min-height: 0; min-width: 0;
   }
   main.layout-bottom .results-panel {
-    grid-template-columns: 1fr 420px;
+    grid-template-columns: 1fr 6px var(--output-w, 420px);
     grid-template-rows: 1fr;
-    border-top: 2px solid var(--border);
   }
   main.layout-right .results-panel {
-    grid-template-rows: 420px 1fr;
-    border-left: 2px solid var(--border);
+    grid-template-rows: var(--canvas-h, 420px) 6px 1fr;
+    grid-template-columns: 1fr;
   }
   .output-wrap, .canvas-wrap { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #output {
@@ -120,17 +119,22 @@
   #turtleCanvas { display: block; max-width: 100%; max-height: 100%; }
 
   main.hide-code .editor-panel { display: none; }
-  main.hide-code.layout-bottom { grid-template-rows: 0 1fr; }
-  main.hide-code.layout-right { grid-template-columns: 0 1fr; }
+  main.hide-code #splitterMain { display: none; }
+  main.hide-code.layout-bottom { grid-template-rows: 0 0 1fr; }
+  main.hide-code.layout-right { grid-template-columns: 0 0 1fr; }
   main.hide-code .results-panel { border: none; }
-  main.hide-code.layout-bottom .results-panel {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr;
+
+  .splitter {
+    background: var(--border);
+    z-index: 5;
+    user-select: none;
+    transition: background 0.15s;
   }
-  main.hide-code.layout-right .results-panel {
-    grid-template-rows: 1fr 1fr;
-    grid-template-columns: 1fr;
-  }
+  .splitter:hover, .splitter.dragging { background: var(--accent); }
+  main.layout-bottom > #splitterMain { cursor: ns-resize; }
+  main.layout-right > #splitterMain { cursor: ew-resize; }
+  main.layout-bottom #splitterResults { cursor: ew-resize; }
+  main.layout-right #splitterResults { cursor: ns-resize; }
 
   .panel {
     position: fixed; top: 70px; right: 18px;
@@ -241,6 +245,7 @@
     </div>
     <textarea id="code"></textarea>
   </section>
+  <div class="splitter" id="splitterMain"></div>
   <section class="results-panel">
     <div class="canvas-wrap">
       <span class="label">Drawing</span>
@@ -248,6 +253,7 @@
         <canvas id="turtleCanvas" width="400" height="400"></canvas>
       </div>
     </div>
+    <div class="splitter" id="splitterResults"></div>
     <div class="output-wrap">
       <span class="label">Output</span>
       <div id="output"></div>
@@ -654,7 +660,61 @@ const savedLayoutIdx = parseInt(localStorage.getItem("pybox_layout_idx") || "0",
 if (!isNaN(savedLayoutIdx) && savedLayoutIdx >= 0 && savedLayoutIdx < LAYOUTS.length) {
   layoutIdx = savedLayoutIdx;
 }
+
+// Restore splitter sizes
+["--results-h", "--results-w", "--output-w", "--canvas-h"].forEach(v => {
+  const saved = localStorage.getItem("pybox_" + v);
+  if (saved) mainEl.style.setProperty(v, saved);
+});
+
 applyLayout();
+
+// Splitter drag logic
+function setupSplitter(splitterEl, getConfig) {
+  splitterEl.addEventListener("mousedown", (e) => {
+    const cfg = getConfig();
+    if (!cfg) return;
+    e.preventDefault();
+    splitterEl.classList.add("dragging");
+    const { axis, prop, defaultSize, invert } = cfg;
+    const startPos = axis === "y" ? e.clientY : e.clientX;
+    const current = parseFloat(mainEl.style.getPropertyValue(prop)) || defaultSize;
+
+    function onMove(me) {
+      const pos = axis === "y" ? me.clientY : me.clientX;
+      let delta = pos - startPos;
+      if (invert) delta = -delta;
+      const newSize = Math.max(120, Math.min(window.innerWidth - 120, current + delta));
+      mainEl.style.setProperty(prop, newSize + "px");
+      editor.refresh();
+    }
+    function onUp() {
+      splitterEl.classList.remove("dragging");
+      localStorage.setItem("pybox_" + prop, mainEl.style.getPropertyValue(prop));
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+
+setupSplitter(document.getElementById("splitterMain"), () => {
+  if (mainEl.classList.contains("hide-code")) return null;
+  if (mainEl.classList.contains("layout-bottom")) {
+    return { axis: "y", prop: "--results-h", defaultSize: 300, invert: true };
+  } else {
+    return { axis: "x", prop: "--results-w", defaultSize: 460, invert: true };
+  }
+});
+
+setupSplitter(document.getElementById("splitterResults"), () => {
+  if (mainEl.classList.contains("layout-bottom")) {
+    return { axis: "x", prop: "--output-w", defaultSize: 420, invert: true };
+  } else {
+    return { axis: "y", prop: "--canvas-h", defaultSize: 420, invert: false };
+  }
+});
 
 // ---------- Projects (saved in browser, each with a stable id) ----------
 function genId() {
