@@ -117,6 +117,46 @@
     margin-top: 6px; overflow: hidden;
   }
   #turtleCanvas { display: block; max-width: 100%; max-height: 100%; }
+
+  main.hide-code .editor-panel { display: none; }
+  main.hide-code.layout-bottom { grid-template-rows: 0 1fr; }
+  main.hide-code.layout-right { grid-template-columns: 0 1fr; }
+  main.hide-code .results-panel { border: none; }
+
+  .panel {
+    position: fixed; top: 70px; right: 18px;
+    background: white; border: 2px solid var(--border);
+    border-radius: 14px; padding: 14px 16px; width: 280px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 100;
+  }
+  .panel.hidden { display: none; }
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px; font-weight: 700; font-size: 15px;
+  }
+  .panel-close {
+    background: none; border: none; font-size: 18px; padding: 2px 8px;
+    cursor: pointer; color: #888;
+  }
+  .panel-close:hover { background: var(--muted); }
+  #projectsList { list-style: none; padding: 0; margin: 0; max-height: 320px; overflow: auto; }
+  #projectsList li {
+    display: flex; gap: 6px; margin-bottom: 6px;
+  }
+  #projectsList .proj-load {
+    flex: 1; text-align: left; background: var(--muted);
+    padding: 8px 12px; font-size: 14px;
+  }
+  #projectsList .proj-del {
+    padding: 8px 12px; background: white; color: #c0392b;
+  }
+  .panel-empty {
+    color: #888; text-align: center; padding: 20px 10px; font-size: 13px;
+  }
+  .panel-hint {
+    font-size: 11px; color: #888; margin-top: 10px;
+    padding-top: 10px; border-top: 1px solid var(--border);
+  }
 </style>
 </head>
 <body>
@@ -124,12 +164,25 @@
   <h1>🐍 PyBox</h1>
   <span id="status">Loading Python…</span>
   <div class="toolbar">
-    <button id="downloadBtn">⬇ Download</button>
-    <button id="uploadBtn">⬆ Upload</button>
+    <button id="saveProjBtn">💾 Save</button>
+    <button id="openProjBtn">📁 Projects</button>
+    <button id="shareBtn">🔗 Share</button>
+    <button id="downloadBtn">⬇ File</button>
+    <button id="uploadBtn">⬆ File</button>
+    <button id="hideCodeBtn">👁 Hide Code</button>
     <button id="layoutBtn">⇄ Layout</button>
     <input type="file" id="fileInput" accept=".py,text/plain" style="display:none" />
   </div>
 </header>
+<div id="projectsPanel" class="panel hidden">
+  <div class="panel-header">
+    <span>📁 My Projects</span>
+    <button class="panel-close" id="closeProjBtn">✕</button>
+  </div>
+  <ul id="projectsList"></ul>
+  <div id="projectsEmpty" class="panel-empty">No saved projects yet.<br/>Use 💾 Save to add one.</div>
+  <div class="panel-hint">Projects are saved in this browser.</div>
+</div>
 <div class="examples">
   <span class="examples-label">Examples</span>
   <button class="example" data-ex="hello">👋 Hello</button>
@@ -471,6 +524,115 @@ const savedLayout = localStorage.getItem("pybox_layout");
 if (savedLayout === "right") {
   mainEl.classList.replace("layout-bottom", "layout-right");
 }
+
+// ---------- Projects (saved in browser) ----------
+function getProjects() {
+  try { return JSON.parse(localStorage.getItem("pybox_projects") || "{}"); }
+  catch { return {}; }
+}
+function saveProjects(p) {
+  localStorage.setItem("pybox_projects", JSON.stringify(p));
+}
+function flashStatus(msg) {
+  const prev = statusEl.textContent;
+  const prevColor = statusEl.style.color;
+  setStatus(msg, "var(--ok)");
+  setTimeout(() => { statusEl.textContent = prev; statusEl.style.color = prevColor; }, 1800);
+}
+
+document.getElementById("saveProjBtn").addEventListener("click", () => {
+  const name = prompt("Project name:");
+  if (!name) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const projects = getProjects();
+  if (projects[trimmed] && !confirm(`Overwrite "${trimmed}"?`)) return;
+  projects[trimmed] = editor.getValue();
+  saveProjects(projects);
+  flashStatus(`Saved "${trimmed}" ✓`);
+});
+
+const projectsPanel = document.getElementById("projectsPanel");
+const projectsList = document.getElementById("projectsList");
+const projectsEmpty = document.getElementById("projectsEmpty");
+
+function renderProjects() {
+  const projects = getProjects();
+  const names = Object.keys(projects).sort();
+  projectsList.innerHTML = "";
+  if (names.length === 0) {
+    projectsEmpty.style.display = "block";
+    return;
+  }
+  projectsEmpty.style.display = "none";
+  names.forEach(name => {
+    const li = document.createElement("li");
+    const load = document.createElement("button");
+    load.className = "proj-load";
+    load.textContent = name;
+    load.addEventListener("click", () => {
+      editor.setValue(projects[name]);
+      projectsPanel.classList.add("hidden");
+      flashStatus(`Loaded "${name}" ✓`);
+    });
+    const del = document.createElement("button");
+    del.className = "proj-del";
+    del.textContent = "✕";
+    del.title = "Delete";
+    del.addEventListener("click", () => {
+      if (!confirm(`Delete "${name}"?`)) return;
+      const p = getProjects();
+      delete p[name];
+      saveProjects(p);
+      renderProjects();
+    });
+    li.appendChild(load);
+    li.appendChild(del);
+    projectsList.appendChild(li);
+  });
+}
+
+document.getElementById("openProjBtn").addEventListener("click", () => {
+  renderProjects();
+  projectsPanel.classList.toggle("hidden");
+});
+document.getElementById("closeProjBtn").addEventListener("click", () => {
+  projectsPanel.classList.add("hidden");
+});
+
+// ---------- Share via URL ----------
+function encodeCode(code) {
+  return btoa(unescape(encodeURIComponent(code)));
+}
+function decodeCode(s) {
+  return decodeURIComponent(escape(atob(s)));
+}
+
+document.getElementById("shareBtn").addEventListener("click", async () => {
+  const url = `${location.origin}${location.pathname}#p=${encodeCode(editor.getValue())}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    flashStatus("Share link copied ✓");
+  } catch {
+    prompt("Copy this share link:", url);
+  }
+});
+
+if (location.hash.startsWith("#p=")) {
+  try {
+    editor.setValue(decodeCode(location.hash.slice(3)));
+  } catch (e) {
+    console.error("Bad share link", e);
+  }
+}
+
+// ---------- Hide / Show Code ----------
+const hideCodeBtn = document.getElementById("hideCodeBtn");
+hideCodeBtn.addEventListener("click", () => {
+  const hidden = mainEl.classList.toggle("hide-code");
+  hideCodeBtn.textContent = hidden ? "👁 Show Code" : "👁 Hide Code";
+  setTimeout(() => editor.refresh(), 50);
+});
 </script>
 </body>
 </html>
