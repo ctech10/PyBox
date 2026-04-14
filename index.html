@@ -438,12 +438,13 @@ sys.modules["turtle"] = _mod
 import js
 
 def _img_obj():
-    return js.window.pyboxGetImage()
+    img = js.window.pyboxGetImage()
+    return img if img else None
 
 def image_show(x=0, y=0, w=None, h=None):
     img = _img_obj()
     if img is None:
-        print("No image. Click the 🖼 Image button and paste a URL first.")
+        print("No image. Open Menu → 🖼 Image from URL first.")
         return
     iw = img.naturalWidth
     ih = img.naturalHeight
@@ -455,11 +456,11 @@ def image_show(x=0, y=0, w=None, h=None):
 
 def image_width():
     img = _img_obj()
-    return img.naturalWidth if img is not None else 0
+    return img.naturalWidth if img else 0
 
 def image_height():
     img = _img_obj()
-    return img.naturalHeight if img is not None else 0
+    return img.naturalHeight if img else 0
 
 def image_loaded():
     return _img_obj() is not None
