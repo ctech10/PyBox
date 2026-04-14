@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Alice's Python Playground</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<style>
+  :root {
+    --bg: #fefaf4;
+    --panel: #ffffff;
+    --ink: #2b2b2b;
+    --accent: #ff7a59;
+    --accent-dark: #e85a36;
+    --muted: #f1ede4;
+    --border: #e4ddd0;
+    --ok: #3fb27f;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: -apple-system, "Comic Sans MS", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink);
+  }
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 20px; background: var(--panel);
+    border-bottom: 2px solid var(--border);
+  }
+  header h1 {
+    margin: 0; font-size: 22px; color: var(--accent-dark);
+  }
+  .toolbar { display: flex; gap: 10px; margin-left: auto; }
+  button {
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    padding: 10px 18px; border-radius: 12px; cursor: pointer;
+    border: 2px solid var(--border); background: var(--muted); color: var(--ink);
+    transition: transform .05s, background .15s;
+  }
+  button:hover { background: #e9e3d4; }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: var(--accent); color: white; border-color: var(--accent-dark);
+  }
+  button.primary:hover { background: var(--accent-dark); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  main {
+    display: grid; grid-template-rows: 1fr 220px;
+    height: calc(100% - 60px);
+  }
+  .editor-wrap, .output-wrap {
+    padding: 12px; min-height: 0;
+  }
+  .editor-wrap { border-bottom: 2px solid var(--border); }
+  .CodeMirror {
+    height: 100%; border-radius: 12px;
+    border: 2px solid var(--border);
+    font-size: 16px; font-family: "SF Mono", Menlo, monospace;
+    background: var(--panel);
+  }
+  #output {
+    height: 100%; background: #1e1e1e; color: #e8e8e8;
+    border-radius: 12px; padding: 12px 14px; overflow: auto;
+    font-family: "SF Mono", Menlo, monospace; font-size: 14px;
+    white-space: pre-wrap; border: 2px solid var(--border);
+  }
+  #output .err { color: #ff8a80; }
+  #output .ok { color: #8eff9f; }
+  #status {
+    font-size: 13px; color: #888; padding: 0 4px;
+  }
+  .label {
+    font-weight: 700; font-size: 13px; color: #666;
+    text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px 4px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐍 Alice's Python Playground</h1>
+  <span id="status">Loading Python…</span>
+  <div class="toolbar">
+    <button id="clearBtn">Clear Output</button>
+    <button id="saveBtn">Save</button>
+    <button id="loadBtn">Load</button>
+    <button id="runBtn" class="primary" disabled>▶ Run</button>
+  </div>
+</header>
+<main>
+  <div class="editor-wrap">
+    <div class="label">Code</div>
+    <textarea id="code"># Welcome, Alice! 👋
+# Write Python below and press Run.
+
+name = "Alice"
+print("Hello,", name)
+
+for i in range(1, 6):
+    print(i, "×", i, "=", i * i)
+</textarea>
+  </div>
+  <div class="output-wrap">
+    <div class="label">Output</div>
+    <div id="output"></div>
+  </div>
+</main>
+<script>
+const editor = CodeMirror.fromTextArea(document.getElementById("code"), {
+  mode: "python",
+  theme: "eclipse",
+  lineNumbers: true,
+  indentUnit: 4,
+  tabSize: 4,
+  indentWithTabs: false,
+  extraKeys: {
+    "Tab": cm => cm.replaceSelection("    ", "end"),
+    "Cmd-Enter": () => runCode(),
+    "Ctrl-Enter": () => runCode(),
+  },
+});
+
+const outputEl = document.getElementById("output");
+const statusEl = document.getElementById("status");
+const runBtn = document.getElementById("runBtn");
+
+function append(text, cls) {
+  const span = document.createElement("span");
+  if (cls) span.className = cls;
+  span.textContent = text;
+  outputEl.appendChild(span);
+  outputEl.scrollTop = outputEl.scrollHeight;
+}
+
+let pyodide = null;
+async function initPyodide() {
+  pyodide = await loadPyodide();
+  pyodide.setStdout({ batched: (s) => append(s + "\n") });
+  pyodide.setStderr({ batched: (s) => append(s + "\n", "err") });
+  statusEl.textContent = "Python ready ✓";
+  statusEl.style.color = "var(--ok)";
+  runBtn.disabled = false;
+}
+initPyodide();
+
+async function runCode() {
+  if (!pyodide) return;
+  outputEl.innerHTML = "";
+  const code = editor.getValue();
+  try {
+    await pyodide.runPythonAsync(code);
+  } catch (e) {
+    append(String(e.message || e), "err");
+  }
+}
+
+document.getElementById("runBtn").addEventListener("click", runCode);
+document.getElementById("clearBtn").addEventListener("click", () => outputEl.innerHTML = "");
+document.getElementById("saveBtn").addEventListener("click", () => {
+  localStorage.setItem("alice_code", editor.getValue());
+  statusEl.textContent = "Saved ✓";
+  setTimeout(() => statusEl.textContent = "Python ready ✓", 1500);
+});
+document.getElementById("loadBtn").addEventListener("click", () => {
+  const saved = localStorage.getItem("alice_code");
+  if (saved) editor.setValue(saved);
+});
+
+const saved = localStorage.getItem("alice_code");
+if (saved) editor.setValue(saved);
+</script>
+</body>
+</html>
