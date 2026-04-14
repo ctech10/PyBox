@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js"></script>
 <style>
   :root {
     --bg: #fefaf4;
@@ -375,7 +375,7 @@ function showFatal(msg) {
   append("  • Use a modern browser (Chrome, Safari, Firefox, Edge)\n");
 }
 
-const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/";
+const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/";
 
 async function initPyodide() {
   const slowWarn = setTimeout(() => {
