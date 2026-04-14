@@ -150,6 +150,9 @@
   #projectsList .proj-del {
     padding: 8px 12px; background: white; color: #c0392b;
   }
+  #projectsList .proj-share {
+    padding: 8px 12px; background: white;
+  }
   .panel-empty {
     color: #888; text-align: center; padding: 20px 10px; font-size: 13px;
   }
@@ -182,7 +185,6 @@
     <button id="hideCodeBtn">👁 Hide Code</button>
     <button id="layoutBtn">⇄ Layout</button>
     <input type="file" id="fileInput" accept=".py,text/plain" style="display:none" />
-    <input type="file" id="imageInput" accept="image/*" style="display:none" />
   </div>
 </header>
 <div id="floatingControls" class="floating-controls">
@@ -205,6 +207,7 @@
   <button class="example" data-ex="square">🟦 Square</button>
   <button class="example" data-ex="spiral">🌈 Spiral</button>
   <button class="example" data-ex="flower">🌸 Flower</button>
+  <button class="example" data-ex="image">🖼 Image</button>
 </div>
 <main class="layout-bottom" id="main">
   <section class="editor-panel">
@@ -266,6 +269,24 @@ turtle.pensize(2)
 for i in range(36):
     turtle.circle(70)
     turtle.right(10)
+`,
+  image: `# First click the 🖼 Image button and paste an image URL.
+# Then run this code to draw on top of it.
+import image
+import turtle
+
+# Show the image, scaled to 300x300, at the center
+image.show(0, 0, 300, 300)
+
+# Draw a red circle on top
+turtle.pencolor("red")
+turtle.pensize(4)
+turtle.penup()
+turtle.goto(0, -120)
+turtle.pendown()
+turtle.circle(120)
+
+print("Image size:", image.width(), "x", image.height())
 `,
 };
 
@@ -391,6 +412,43 @@ for _n in ["forward","fd","backward","back","bk","right","rt","left","lt",
     setattr(_mod, _n, _g[_n])
 sys.modules["turtle"] = _mod
 
+# image module — uses the image loaded via the 🖼 Image button
+import js
+
+def _img_obj():
+    return js.window.pyboxGetImage()
+
+def image_show(x=0, y=0, w=None, h=None):
+    img = _img_obj()
+    if img is None:
+        print("No image. Click the 🖼 Image button and paste a URL first.")
+        return
+    iw = img.naturalWidth
+    ih = img.naturalHeight
+    if w is None: w = iw
+    if h is None: h = ih
+    cx = _canvas.width / 2 + x - w / 2
+    cy = _canvas.height / 2 - y - h / 2
+    _ctx.drawImage(img, cx, cy, w, h)
+
+def image_width():
+    img = _img_obj()
+    return img.naturalWidth if img is not None else 0
+
+def image_height():
+    img = _img_obj()
+    return img.naturalHeight if img is not None else 0
+
+def image_loaded():
+    return _img_obj() is not None
+
+_img_mod = types.ModuleType("image")
+_img_mod.show = image_show
+_img_mod.width = image_width
+_img_mod.height = image_height
+_img_mod.loaded = image_loaded
+sys.modules["image"] = _img_mod
+
 def _pybox_reset():
     reset()
 `;
@@ -489,7 +547,6 @@ async function runCode() {
   if (!pyodide) return;
   outputEl.innerHTML = "";
   await pyodide.runPythonAsync("_pybox_reset()");
-  drawBgImage();
   try {
     await pyodide.runPythonAsync(editor.getValue());
   } catch (e) {
@@ -541,13 +598,30 @@ if (savedLayout === "right") {
   mainEl.classList.replace("layout-bottom", "layout-right");
 }
 
-// ---------- Projects (saved in browser) ----------
+// ---------- Projects (saved in browser, each with a stable id) ----------
+function genId() {
+  return Math.random().toString(36).slice(2, 12);
+}
+
 function getProjects() {
-  try { return JSON.parse(localStorage.getItem("pybox_projects") || "{}"); }
+  let data;
+  try { data = JSON.parse(localStorage.getItem("pybox_projects") || "{}"); }
   catch { return {}; }
+  // Migrate old format {name: code} -> {id: {name, code}}
+  const keys = Object.keys(data);
+  if (keys.length > 0 && typeof data[keys[0]] === "string") {
+    const migrated = {};
+    keys.forEach(name => { migrated[genId()] = { name, code: data[name] }; });
+    localStorage.setItem("pybox_projects", JSON.stringify(migrated));
+    return migrated;
+  }
+  return data;
 }
 function saveProjects(p) {
   localStorage.setItem("pybox_projects", JSON.stringify(p));
+}
+function findProjectIdByName(projects, name) {
+  return Object.keys(projects).find(id => projects[id].name === name);
 }
 function flashStatus(msg) {
   const prev = statusEl.textContent;
@@ -562,8 +636,10 @@ document.getElementById("saveProjBtn").addEventListener("click", () => {
   const trimmed = name.trim();
   if (!trimmed) return;
   const projects = getProjects();
-  if (projects[trimmed] && !confirm(`Overwrite "${trimmed}"?`)) return;
-  projects[trimmed] = editor.getValue();
+  const existingId = findProjectIdByName(projects, trimmed);
+  if (existingId && !confirm(`Overwrite "${trimmed}"?`)) return;
+  const id = existingId || genId();
+  projects[id] = { name: trimmed, code: editor.getValue() };
   saveProjects(projects);
   flashStatus(`Saved "${trimmed}" ✓`);
 });
@@ -574,38 +650,58 @@ const projectsEmpty = document.getElementById("projectsEmpty");
 
 function renderProjects() {
   const projects = getProjects();
-  const names = Object.keys(projects).sort();
+  const entries = Object.entries(projects)
+    .sort((a, b) => a[1].name.localeCompare(b[1].name));
   projectsList.innerHTML = "";
-  if (names.length === 0) {
+  if (entries.length === 0) {
     projectsEmpty.style.display = "block";
     return;
   }
   projectsEmpty.style.display = "none";
-  names.forEach(name => {
+  entries.forEach(([id, proj]) => {
     const li = document.createElement("li");
     const load = document.createElement("button");
     load.className = "proj-load";
-    load.textContent = name;
+    load.textContent = proj.name;
     load.addEventListener("click", () => {
-      editor.setValue(projects[name]);
+      editor.setValue(proj.code);
       projectsPanel.classList.add("hidden");
-      flashStatus(`Loaded "${name}" ✓`);
+      flashStatus(`Loaded "${proj.name}" ✓`);
+    });
+    const share = document.createElement("button");
+    share.className = "proj-share";
+    share.textContent = "🔗";
+    share.title = "Copy share link";
+    share.addEventListener("click", async () => {
+      const url = projectShareUrl(id, proj.name, proj.code);
+      try {
+        await navigator.clipboard.writeText(url);
+        flashStatus(`Link for "${proj.name}" copied ✓`);
+      } catch {
+        prompt("Copy this link:", url);
+      }
     });
     const del = document.createElement("button");
     del.className = "proj-del";
     del.textContent = "✕";
     del.title = "Delete";
     del.addEventListener("click", () => {
-      if (!confirm(`Delete "${name}"?`)) return;
+      if (!confirm(`Delete "${proj.name}"?`)) return;
       const p = getProjects();
-      delete p[name];
+      delete p[id];
       saveProjects(p);
       renderProjects();
     });
     li.appendChild(load);
+    li.appendChild(share);
     li.appendChild(del);
     projectsList.appendChild(li);
   });
+}
+
+function projectShareUrl(id, name, code) {
+  const payload = JSON.stringify({ i: id, n: name, c: code });
+  return `${location.origin}${location.pathname}#s=${encodeCode(payload)}`;
 }
 
 document.getElementById("openProjBtn").addEventListener("click", () => {
@@ -634,13 +730,33 @@ document.getElementById("shareBtn").addEventListener("click", async () => {
   }
 });
 
-if (location.hash.startsWith("#p=")) {
-  try {
-    editor.setValue(decodeCode(location.hash.slice(3)));
-  } catch (e) {
-    console.error("Bad share link", e);
+function handleShareHash() {
+  const hash = location.hash;
+  if (hash.startsWith("#p=")) {
+    try { editor.setValue(decodeCode(hash.slice(3))); }
+    catch (e) { console.error("Bad share link", e); }
+  } else if (hash.startsWith("#s=")) {
+    try {
+      const payload = JSON.parse(decodeCode(hash.slice(3)));
+      const { i: id, n: name, c: code } = payload;
+      editor.setValue(code);
+      const projects = getProjects();
+      if (!projects[id]) {
+        setTimeout(() => {
+          if (confirm(`Add shared project "${name}" to your projects?`)) {
+            const p = getProjects();
+            p[id] = { name, code };
+            saveProjects(p);
+            flashStatus(`Saved "${name}" to My Projects ✓`);
+          }
+        }, 400);
+      } else {
+        flashStatus(`Loaded "${name}"`);
+      }
+    } catch (e) { console.error("Bad share link", e); }
   }
 }
+handleShareHash();
 
 // ---------- Hide / Show Code ----------
 const hideCodeBtn = document.getElementById("hideCodeBtn");
@@ -660,57 +776,42 @@ const observer = new MutationObserver(() => { runBtn2.disabled = runBtn.disabled
 observer.observe(runBtn, { attributes: true, attributeFilter: ["disabled"] });
 runBtn2.disabled = runBtn.disabled;
 
-// ---------- Background image upload ----------
-let bgImage = null;
-const canvasEl = document.getElementById("turtleCanvas");
-const canvasCtx = canvasEl.getContext("2d");
-
-function drawBgImage() {
-  if (!bgImage) return;
-  const iw = bgImage.naturalWidth;
-  const ih = bgImage.naturalHeight;
-  const scale = Math.min(canvasEl.width / iw, canvasEl.height / ih, 1);
-  const w = iw * scale;
-  const h = ih * scale;
-  const x = (canvasEl.width - w) / 2;
-  const y = (canvasEl.height - h) / 2;
-  canvasCtx.drawImage(bgImage, x, y, w, h);
-}
+// ---------- Image from URL (usable in Python via `import image`) ----------
+let pyboxImage = null;
+window.pyboxGetImage = () => pyboxImage;
 
 const imageBtn = document.getElementById("imageBtn");
-const imageInput = document.getElementById("imageInput");
 
-imageBtn.addEventListener("click", () => {
-  if (bgImage) {
-    if (confirm("Remove the current image?")) {
-      bgImage = null;
-      canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+function loadImageUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load image"));
+    img.src = url;
+  });
+}
+
+imageBtn.addEventListener("click", async () => {
+  if (pyboxImage) {
+    const action = confirm("Remove the current image?\n(Cancel to change URL)");
+    if (action) {
+      pyboxImage = null;
       imageBtn.textContent = "🖼 Image";
       flashStatus("Image removed");
+      return;
     }
-    return;
   }
-  imageInput.click();
-});
-
-imageInput.addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  imageInput.value = "";
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      bgImage = img;
-      canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-      drawBgImage();
-      imageBtn.textContent = "🖼 Image ×";
-      flashStatus("Image loaded ✓");
-    };
-    img.onerror = () => flashStatus("Could not load image");
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
+  const current = pyboxImage ? pyboxImage.src : "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png";
+  const url = prompt("Image URL:", current);
+  if (!url) return;
+  try {
+    pyboxImage = await loadImageUrl(url.trim());
+    imageBtn.textContent = "🖼 Image ×";
+    flashStatus("Image loaded ✓");
+  } catch (e) {
+    pyboxImage = null;
+    flashStatus("Could not load image");
+  }
 });
 </script>
 </body>
