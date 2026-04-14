@@ -229,6 +229,7 @@
   <button class="example" data-ex="spiral">🌈 Spiral</button>
   <button class="example" data-ex="flower">🌸 Flower</button>
   <button class="example" data-ex="image">🖼 Image</button>
+  <button class="example" data-ex="input">💬 Ask Me</button>
 </div>
 <main class="layout-bottom" id="main">
   <section class="editor-panel">
@@ -291,6 +292,23 @@ turtle.pensize(2)
 for i in range(36):
     turtle.circle(70)
     turtle.right(10)
+`,
+  input: `# Ask the user questions and draw with the answers
+import turtle
+
+name = input("What's your name?")
+print("Hello,", name + "!")
+
+color = input("Pick a color (red, blue, green, purple):")
+sides = int(input("How many sides? (3-10)"))
+
+turtle.pencolor(color)
+turtle.pensize(3)
+for i in range(sides):
+    turtle.forward(100)
+    turtle.right(360 / sides)
+
+print("Nice shape,", name + "!")
 `,
   image: `# First click the 🖼 Image button and paste an image URL.
 # Then run this code to draw on top of it.
@@ -471,6 +489,12 @@ _img_mod.width = image_width
 _img_mod.height = image_height
 _img_mod.loaded = image_loaded
 sys.modules["image"] = _img_mod
+
+import builtins as _builtins
+def _pybox_input(prompt=""):
+    r = js.window.prompt(str(prompt))
+    return r if r else ""
+_builtins.input = _pybox_input
 
 def _pybox_reset():
     reset()
