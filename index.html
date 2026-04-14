@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Alice's Python Playground</title>
+<title>PyBox</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -27,17 +27,18 @@
     background: var(--bg); color: var(--ink);
   }
   header {
-    display: flex; align-items: center; gap: 16px;
-    padding: 14px 20px; background: var(--panel);
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 18px; background: var(--panel);
     border-bottom: 2px solid var(--border);
   }
   header h1 {
     margin: 0; font-size: 22px; color: var(--accent-dark);
   }
-  .toolbar { display: flex; gap: 10px; margin-left: auto; }
+  #status { font-size: 13px; color: #888; }
+  .toolbar { display: flex; gap: 8px; margin-left: auto; }
   button {
-    font-family: inherit; font-size: 15px; font-weight: 600;
-    padding: 10px 18px; border-radius: 12px; cursor: pointer;
+    font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 9px 14px; border-radius: 11px; cursor: pointer;
     border: 2px solid var(--border); background: var(--muted); color: var(--ink);
     transition: transform .05s, background .15s;
   }
@@ -45,70 +46,287 @@
   button:active { transform: translateY(1px); }
   button.primary {
     background: var(--accent); color: white; border-color: var(--accent-dark);
+    font-size: 16px; padding: 10px 22px;
   }
   button.primary:hover { background: var(--accent-dark); }
   button:disabled { opacity: .5; cursor: not-allowed; }
+  button.example {
+    padding: 7px 12px; font-size: 13px; border-radius: 999px;
+    background: white;
+  }
+  .examples {
+    display: flex; gap: 8px; padding: 10px 18px;
+    background: var(--panel); border-bottom: 2px solid var(--border);
+    overflow-x: auto;
+  }
+  .examples-label {
+    font-weight: 700; font-size: 12px; color: #888;
+    text-transform: uppercase; letter-spacing: 1px;
+    align-self: center; padding-right: 4px; white-space: nowrap;
+  }
   main {
-    display: grid; grid-template-rows: 1fr 220px;
-    height: calc(100% - 60px);
+    display: grid;
+    height: calc(100% - 60px - 53px);
   }
-  .editor-wrap, .output-wrap {
-    padding: 12px; min-height: 0;
+  main.layout-bottom {
+    grid-template-rows: 1fr 300px;
+    grid-template-columns: 1fr;
   }
-  .editor-wrap { border-bottom: 2px solid var(--border); }
+  main.layout-right {
+    grid-template-columns: 1fr 460px;
+    grid-template-rows: 1fr;
+  }
+  .editor-panel { display: flex; flex-direction: column; padding: 12px; min-height: 0; min-width: 0; }
+  .editor-toolbar {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  }
+  .label {
+    font-weight: 700; font-size: 12px; color: #666;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .editor-toolbar .label { margin-right: auto; }
   .CodeMirror {
-    height: 100%; border-radius: 12px;
+    flex: 1; height: auto; border-radius: 12px;
     border: 2px solid var(--border);
     font-size: 16px; font-family: "SF Mono", Menlo, monospace;
     background: var(--panel);
   }
+  .results-panel {
+    display: grid; padding: 12px; gap: 12px; min-height: 0; min-width: 0;
+  }
+  main.layout-bottom .results-panel {
+    grid-template-columns: 1fr 420px;
+    border-top: 2px solid var(--border);
+  }
+  main.layout-right .results-panel {
+    grid-template-rows: 420px 1fr;
+    border-left: 2px solid var(--border);
+  }
+  .output-wrap, .canvas-wrap { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #output {
-    height: 100%; background: #1e1e1e; color: #e8e8e8;
+    flex: 1; background: #1e1e1e; color: #e8e8e8;
     border-radius: 12px; padding: 12px 14px; overflow: auto;
     font-family: "SF Mono", Menlo, monospace; font-size: 14px;
     white-space: pre-wrap; border: 2px solid var(--border);
+    margin-top: 6px;
   }
   #output .err { color: #ff8a80; }
-  #output .ok { color: #8eff9f; }
-  #status {
-    font-size: 13px; color: #888; padding: 0 4px;
+  .canvas-box {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background: white; border: 2px solid var(--border); border-radius: 12px;
+    margin-top: 6px; overflow: hidden;
   }
-  .label {
-    font-weight: 700; font-size: 13px; color: #666;
-    text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px 4px;
-  }
+  #turtleCanvas { display: block; max-width: 100%; max-height: 100%; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🐍 Alice's Python Playground</h1>
+  <h1>🐍 PyBox</h1>
   <span id="status">Loading Python…</span>
   <div class="toolbar">
-    <button id="clearBtn">Clear Output</button>
-    <button id="saveBtn">Save</button>
-    <button id="loadBtn">Load</button>
-    <button id="runBtn" class="primary" disabled>▶ Run</button>
+    <button id="downloadBtn">⬇ Download</button>
+    <button id="uploadBtn">⬆ Upload</button>
+    <button id="layoutBtn">⇄ Layout</button>
+    <input type="file" id="fileInput" accept=".py,text/plain" style="display:none" />
   </div>
 </header>
-<main>
-  <div class="editor-wrap">
-    <div class="label">Code</div>
-    <textarea id="code"># Welcome, Alice! 👋
-# Write Python below and press Run.
-
-name = "Alice"
-print("Hello,", name)
-
-for i in range(1, 6):
-    print(i, "×", i, "=", i * i)
-</textarea>
-  </div>
-  <div class="output-wrap">
-    <div class="label">Output</div>
-    <div id="output"></div>
-  </div>
+<div class="examples">
+  <span class="examples-label">Examples</span>
+  <button class="example" data-ex="hello">👋 Hello</button>
+  <button class="example" data-ex="count">🔢 Counting</button>
+  <button class="example" data-ex="square">🟦 Square</button>
+  <button class="example" data-ex="spiral">🌈 Spiral</button>
+  <button class="example" data-ex="flower">🌸 Flower</button>
+</div>
+<main class="layout-bottom" id="main">
+  <section class="editor-panel">
+    <div class="editor-toolbar">
+      <span class="label">Code</span>
+      <button id="clearOutBtn">Clear Output</button>
+      <button id="runBtn" class="primary" disabled>▶ Run</button>
+    </div>
+    <textarea id="code"></textarea>
+  </section>
+  <section class="results-panel">
+    <div class="canvas-wrap">
+      <span class="label">Drawing</span>
+      <div class="canvas-box">
+        <canvas id="turtleCanvas" width="400" height="400"></canvas>
+      </div>
+    </div>
+    <div class="output-wrap">
+      <span class="label">Output</span>
+      <div id="output"></div>
+    </div>
+  </section>
 </main>
 <script>
+const EXAMPLES = {
+  hello: `# Say hello
+print("Hello!")
+print("My name is Alice")
+print("I am learning Python")
+`,
+  count: `# Count from 1 to 10
+for i in range(1, 11):
+    print(i)
+
+print("Done!")
+`,
+  square: `# Draw a square with the turtle
+import turtle
+
+for i in range(4):
+    turtle.forward(120)
+    turtle.right(90)
+`,
+  spiral: `# Colorful spiral
+import turtle
+
+colors = ["red", "orange", "gold", "green", "blue", "purple"]
+for i in range(70):
+    turtle.pencolor(colors[i % 6])
+    turtle.pensize(2)
+    turtle.forward(i * 3)
+    turtle.right(59)
+`,
+  flower: `# Pink flower
+import turtle
+
+turtle.pencolor("hotpink")
+turtle.pensize(2)
+for i in range(36):
+    turtle.circle(70)
+    turtle.right(10)
+`,
+};
+
+const TURTLE_PY = `
+import sys, math, types
+from js import document
+
+_canvas = document.getElementById("turtleCanvas")
+_ctx = _canvas.getContext("2d")
+
+class _T:
+    def __init__(self):
+        self.x = 0.0; self.y = 0.0
+        self.h = 0.0
+        self.down = True
+        self.color = "black"
+        self.size = 2
+
+    def _cx(self): return _canvas.width / 2 + self.x
+    def _cy(self): return _canvas.height / 2 - self.y
+
+    def fd(self, d):
+        r = math.radians(self.h)
+        nx = self.x + d * math.cos(r)
+        ny = self.y + d * math.sin(r)
+        if self.down:
+            _ctx.beginPath()
+            _ctx.strokeStyle = self.color
+            _ctx.lineWidth = self.size
+            _ctx.lineCap = "round"
+            _ctx.moveTo(self._cx(), self._cy())
+            self.x = nx; self.y = ny
+            _ctx.lineTo(self._cx(), self._cy())
+            _ctx.stroke()
+        else:
+            self.x = nx; self.y = ny
+
+_t = _T()
+
+def forward(d): _t.fd(d)
+def fd(d): _t.fd(d)
+def backward(d): _t.fd(-d)
+def back(d): _t.fd(-d)
+def bk(d): _t.fd(-d)
+def right(a): _t.h -= a
+def rt(a): _t.h -= a
+def left(a): _t.h += a
+def lt(a): _t.h += a
+def penup(): _t.down = False
+def pu(): _t.down = False
+def pendown(): _t.down = True
+def pd(): _t.down = True
+def pencolor(c): _t.color = c
+def color(c, *a): _t.color = c
+def pensize(s): _t.size = s
+def width(s): _t.size = s
+def setheading(a): _t.h = a
+def seth(a): _t.h = a
+
+def goto(x, y):
+    if _t.down:
+        _ctx.beginPath()
+        _ctx.strokeStyle = _t.color
+        _ctx.lineWidth = _t.size
+        _ctx.lineCap = "round"
+        _ctx.moveTo(_t._cx(), _t._cy())
+        _t.x = x; _t.y = y
+        _ctx.lineTo(_t._cx(), _t._cy())
+        _ctx.stroke()
+    else:
+        _t.x = x; _t.y = y
+
+def setpos(x, y): goto(x, y)
+def setposition(x, y): goto(x, y)
+
+def home():
+    goto(0, 0); _t.h = 0
+
+def circle(r, extent=360):
+    steps = max(12, int(abs(extent) / 3))
+    step_a = extent / steps
+    step_d = 2 * abs(r) * math.sin(math.radians(step_a / 2))
+    if r < 0:
+        for _ in range(steps):
+            _t.fd(step_d); _t.h -= step_a
+    else:
+        for _ in range(steps):
+            _t.fd(step_d); _t.h += step_a
+
+def dot(size=4, c=None):
+    cl = c or _t.color
+    _ctx.beginPath()
+    _ctx.fillStyle = cl
+    _ctx.arc(_t._cx(), _t._cy(), size/2, 0, 2*math.pi)
+    _ctx.fill()
+
+def bgcolor(c):
+    _canvas.style.backgroundColor = c
+
+def clear():
+    _ctx.clearRect(0, 0, _canvas.width, _canvas.height)
+
+def reset():
+    clear()
+    _t.x = 0; _t.y = 0; _t.h = 0
+    _t.down = True; _t.color = "black"; _t.size = 2
+    _canvas.style.backgroundColor = "white"
+
+def speed(s): pass
+def done(): pass
+def mainloop(): pass
+def hideturtle(): pass
+def showturtle(): pass
+def title(t): pass
+
+_mod = types.ModuleType("turtle")
+_g = globals()
+for _n in ["forward","fd","backward","back","bk","right","rt","left","lt",
+           "penup","pu","pendown","pd","pencolor","color","pensize","width",
+           "setheading","seth","goto","setpos","setposition","home","circle",
+           "dot","bgcolor","clear","reset","speed","done","mainloop",
+           "hideturtle","showturtle","title"]:
+    setattr(_mod, _n, _g[_n])
+sys.modules["turtle"] = _mod
+
+def _pybox_reset():
+    reset()
+`;
+
 const editor = CodeMirror.fromTextArea(document.getElementById("code"), {
   mode: "python",
   theme: "eclipse",
@@ -122,10 +340,13 @@ const editor = CodeMirror.fromTextArea(document.getElementById("code"), {
     "Ctrl-Enter": () => runCode(),
   },
 });
+editor.setValue(EXAMPLES.hello);
 
 const outputEl = document.getElementById("output");
 const statusEl = document.getElementById("status");
 const runBtn = document.getElementById("runBtn");
+const mainEl = document.getElementById("main");
+const fileInput = document.getElementById("fileInput");
 
 function append(text, cls) {
   const span = document.createElement("span");
@@ -140,6 +361,7 @@ async function initPyodide() {
   pyodide = await loadPyodide();
   pyodide.setStdout({ batched: (s) => append(s + "\n") });
   pyodide.setStderr({ batched: (s) => append(s + "\n", "err") });
+  await pyodide.runPythonAsync(TURTLE_PY);
   statusEl.textContent = "Python ready ✓";
   statusEl.style.color = "var(--ok)";
   runBtn.disabled = false;
@@ -149,28 +371,57 @@ initPyodide();
 async function runCode() {
   if (!pyodide) return;
   outputEl.innerHTML = "";
-  const code = editor.getValue();
+  await pyodide.runPythonAsync("_pybox_reset()");
   try {
-    await pyodide.runPythonAsync(code);
+    await pyodide.runPythonAsync(editor.getValue());
   } catch (e) {
     append(String(e.message || e), "err");
   }
 }
 
 document.getElementById("runBtn").addEventListener("click", runCode);
-document.getElementById("clearBtn").addEventListener("click", () => outputEl.innerHTML = "");
-document.getElementById("saveBtn").addEventListener("click", () => {
-  localStorage.setItem("alice_code", editor.getValue());
-  statusEl.textContent = "Saved ✓";
-  setTimeout(() => statusEl.textContent = "Python ready ✓", 1500);
-});
-document.getElementById("loadBtn").addEventListener("click", () => {
-  const saved = localStorage.getItem("alice_code");
-  if (saved) editor.setValue(saved);
+document.getElementById("clearOutBtn").addEventListener("click", () => outputEl.innerHTML = "");
+
+document.getElementById("layoutBtn").addEventListener("click", () => {
+  if (mainEl.classList.contains("layout-bottom")) {
+    mainEl.classList.replace("layout-bottom", "layout-right");
+    localStorage.setItem("pybox_layout", "right");
+  } else {
+    mainEl.classList.replace("layout-right", "layout-bottom");
+    localStorage.setItem("pybox_layout", "bottom");
+  }
+  setTimeout(() => editor.refresh(), 50);
 });
 
-const saved = localStorage.getItem("alice_code");
-if (saved) editor.setValue(saved);
+document.getElementById("downloadBtn").addEventListener("click", () => {
+  const blob = new Blob([editor.getValue()], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "my_code.py";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById("uploadBtn").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  editor.setValue(text);
+  fileInput.value = "";
+});
+
+document.querySelectorAll(".example").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const code = EXAMPLES[btn.dataset.ex];
+    if (code) editor.setValue(code);
+  });
+});
+
+const savedLayout = localStorage.getItem("pybox_layout");
+if (savedLayout === "right") {
+  mainEl.classList.replace("layout-bottom", "layout-right");
+}
 </script>
 </body>
 </html>
