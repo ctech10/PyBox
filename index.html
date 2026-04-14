@@ -157,6 +157,15 @@
     font-size: 11px; color: #888; margin-top: 10px;
     padding-top: 10px; border-top: 1px solid var(--border);
   }
+  .floating-controls {
+    position: fixed; bottom: 24px; right: 24px;
+    display: none; gap: 10px; z-index: 50;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 10px; border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    border: 2px solid var(--border);
+  }
+  .floating-controls.show { display: flex; }
 </style>
 </head>
 <body>
@@ -169,11 +178,17 @@
     <button id="shareBtn">🔗 Share</button>
     <button id="downloadBtn">⬇ File</button>
     <button id="uploadBtn">⬆ File</button>
+    <button id="imageBtn">🖼 Image</button>
     <button id="hideCodeBtn">👁 Hide Code</button>
     <button id="layoutBtn">⇄ Layout</button>
     <input type="file" id="fileInput" accept=".py,text/plain" style="display:none" />
+    <input type="file" id="imageInput" accept="image/*" style="display:none" />
   </div>
 </header>
+<div id="floatingControls" class="floating-controls">
+  <button id="clearOutBtn2">Clear Output</button>
+  <button id="runBtn2" class="primary">▶ Run</button>
+</div>
 <div id="projectsPanel" class="panel hidden">
   <div class="panel-header">
     <span>📁 My Projects</span>
@@ -474,6 +489,7 @@ async function runCode() {
   if (!pyodide) return;
   outputEl.innerHTML = "";
   await pyodide.runPythonAsync("_pybox_reset()");
+  drawBgImage();
   try {
     await pyodide.runPythonAsync(editor.getValue());
   } catch (e) {
@@ -628,10 +644,73 @@ if (location.hash.startsWith("#p=")) {
 
 // ---------- Hide / Show Code ----------
 const hideCodeBtn = document.getElementById("hideCodeBtn");
+const floatingControls = document.getElementById("floatingControls");
 hideCodeBtn.addEventListener("click", () => {
   const hidden = mainEl.classList.toggle("hide-code");
   hideCodeBtn.textContent = hidden ? "👁 Show Code" : "👁 Hide Code";
+  floatingControls.classList.toggle("show", hidden);
   setTimeout(() => editor.refresh(), 50);
+});
+
+document.getElementById("runBtn2").addEventListener("click", runCode);
+document.getElementById("clearOutBtn2").addEventListener("click", () => outputEl.innerHTML = "");
+// Mirror runBtn enabled state to runBtn2
+const runBtn2 = document.getElementById("runBtn2");
+const observer = new MutationObserver(() => { runBtn2.disabled = runBtn.disabled; });
+observer.observe(runBtn, { attributes: true, attributeFilter: ["disabled"] });
+runBtn2.disabled = runBtn.disabled;
+
+// ---------- Background image upload ----------
+let bgImage = null;
+const canvasEl = document.getElementById("turtleCanvas");
+const canvasCtx = canvasEl.getContext("2d");
+
+function drawBgImage() {
+  if (!bgImage) return;
+  const iw = bgImage.naturalWidth;
+  const ih = bgImage.naturalHeight;
+  const scale = Math.min(canvasEl.width / iw, canvasEl.height / ih, 1);
+  const w = iw * scale;
+  const h = ih * scale;
+  const x = (canvasEl.width - w) / 2;
+  const y = (canvasEl.height - h) / 2;
+  canvasCtx.drawImage(bgImage, x, y, w, h);
+}
+
+const imageBtn = document.getElementById("imageBtn");
+const imageInput = document.getElementById("imageInput");
+
+imageBtn.addEventListener("click", () => {
+  if (bgImage) {
+    if (confirm("Remove the current image?")) {
+      bgImage = null;
+      canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      imageBtn.textContent = "🖼 Image";
+      flashStatus("Image removed");
+    }
+    return;
+  }
+  imageInput.click();
+});
+
+imageInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  imageInput.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      bgImage = img;
+      canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      drawBgImage();
+      imageBtn.textContent = "🖼 Image ×";
+      flashStatus("Image loaded ✓");
+    };
+    img.onerror = () => flashStatus("Could not load image");
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
 });
 </script>
 </body>
