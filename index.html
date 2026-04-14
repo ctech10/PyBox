@@ -111,6 +111,13 @@
     margin-top: 6px;
   }
   #output .err { color: #ff8a80; }
+  #output .stdin-line { display: flex; align-items: center; }
+  #output .stdin-prompt { color: #e8e8e8; white-space: pre-wrap; }
+  #output .stdin-input {
+    background: transparent; border: none; color: #8eff9f;
+    font: inherit; outline: none; flex: 1;
+    caret-color: #8eff9f; padding: 0;
+  }
   .canvas-box {
     flex: 1; display: flex; align-items: center; justify-content: center;
     background: white; border: 2px solid var(--border); border-radius: 12px;
@@ -496,11 +503,33 @@ _img_mod.height = image_height
 _img_mod.loaded = image_loaded
 sys.modules["image"] = _img_mod
 
-import builtins as _builtins
-def _pybox_input(prompt=""):
-    r = js.window.prompt(str(prompt))
-    return r if r else ""
-_builtins.input = _pybox_input
+import ast
+
+async def _pybox_ainput(prompt=""):
+    p = js.window.pyboxPromptInput(str(prompt))
+    r = await p
+    return str(r) if r is not None else ""
+
+class _InputTransformer(ast.NodeTransformer):
+    def visit_Call(self, node):
+        self.generic_visit(node)
+        if isinstance(node.func, ast.Name) and node.func.id == "input":
+            return ast.Await(value=ast.Call(
+                func=ast.Name(id="_pybox_ainput", ctx=ast.Load()),
+                args=node.args,
+                keywords=node.keywords,
+            ))
+        return node
+
+def _pybox_prepare(code):
+    tree = ast.parse(code)
+    _InputTransformer().visit(tree)
+    ast.fix_missing_locations(tree)
+    src = ast.unparse(tree)
+    indented = "\\n".join("    " + line for line in src.split("\\n"))
+    if not indented.strip():
+        indented = "    pass"
+    return "async def _pybox_main():\\n" + indented + "\\n"
 
 def _pybox_reset():
     reset()
@@ -602,11 +631,50 @@ async function runCode() {
   outputEl.innerHTML = "";
   await pyodide.runPythonAsync("_pybox_reset()");
   try {
-    await pyodide.runPythonAsync(editor.getValue());
+    pyodide.globals.set("_pybox_user_code", editor.getValue());
+    await pyodide.runPythonAsync(
+      "_w = _pybox_prepare(_pybox_user_code)\n" +
+      "exec(_w, globals())\n" +
+      "await _pybox_main()\n"
+    );
   } catch (e) {
     append(String(e.message || e), "err");
   }
 }
+
+// Inline input inside the output console — used by Python's input()
+window.pyboxPromptInput = (promptText) => {
+  return new Promise((resolve) => {
+    const line = document.createElement("div");
+    line.className = "stdin-line";
+
+    const promptSpan = document.createElement("span");
+    promptSpan.className = "stdin-prompt";
+    promptSpan.textContent = promptText;
+
+    const inp = document.createElement("input");
+    inp.className = "stdin-input";
+    inp.type = "text";
+
+    line.appendChild(promptSpan);
+    line.appendChild(inp);
+    outputEl.appendChild(line);
+    outputEl.scrollTop = outputEl.scrollHeight;
+    setTimeout(() => inp.focus(), 0);
+
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const val = inp.value;
+        const finalLine = document.createElement("div");
+        finalLine.textContent = promptText + val;
+        outputEl.replaceChild(finalLine, line);
+        outputEl.scrollTop = outputEl.scrollHeight;
+        resolve(val);
+      }
+    });
+  });
+};
 
 document.getElementById("runBtn").addEventListener("click", runCode);
 document.getElementById("clearOutBtn").addEventListener("click", () => outputEl.innerHTML = "");
