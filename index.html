@@ -8,29 +8,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-<script>
-  // Try main CDN, fall back to alternate if blocked
-  (function loadPyodideScript() {
-    const sources = [
-      "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js",
-      "https://pyodide-cdn2.iodide.io/v0.26.2/full/pyodide.js"
-    ];
-    let i = 0;
-    function tryNext() {
-      if (i >= sources.length) {
-        window._pyodideLoadFailed = true;
-        document.dispatchEvent(new Event("pyodideScriptFailed"));
-        return;
-      }
-      const s = document.createElement("script");
-      s.src = sources[i++];
-      s.onload = () => document.dispatchEvent(new Event("pyodideScriptLoaded"));
-      s.onerror = tryNext;
-      document.head.appendChild(s);
-    }
-    tryNext();
-  })();
-</script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
 <style>
   :root {
     --bg: #fefaf4;
@@ -397,25 +375,22 @@ function showFatal(msg) {
   append("  • Use a modern browser (Chrome, Safari, Firefox, Edge)\n");
 }
 
-async function initPyodide() {
-  if (window._pyodideLoadFailed) {
-    showFatal("Could not download Python from the internet.");
-    return;
-  }
+const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/";
 
-  // 25s warning if Pyodide download is slow
+async function initPyodide() {
   const slowWarn = setTimeout(() => {
     if (!pyodide) setStatus("Still loading… (slow connection?)", "#c97a00");
   }, 25000);
-
-  // 60s hard timeout
   const hardTimeout = setTimeout(() => {
-    if (!pyodide) showFatal("Loading Python timed out after 60 seconds.");
+    if (!pyodide) showFatal("Loading Python timed out after 60 seconds. Try a hard refresh (Cmd/Ctrl + Shift + R).");
   }, 60000);
 
   try {
+    if (typeof loadPyodide !== "function") {
+      throw new Error("Pyodide script did not load. Check your internet connection.");
+    }
     setStatus("Downloading Python… (~10 MB, first time only)");
-    pyodide = await loadPyodide();
+    pyodide = await loadPyodide({ indexURL: PYODIDE_INDEX });
     clearTimeout(slowWarn);
     clearTimeout(hardTimeout);
 
@@ -431,20 +406,16 @@ async function initPyodide() {
     clearTimeout(slowWarn);
     clearTimeout(hardTimeout);
     console.error("PyBox init failed:", err);
-    showFatal("Error starting Python: " + (err.message || err));
+    const msg = String(err.message || err);
+    if (msg.includes("exit(1)") || msg.includes("WebAssembly") || msg.includes("wasm")) {
+      showFatal("Python failed to start. This usually means a cached file got corrupted. Please do a hard refresh: Cmd/Ctrl + Shift + R.");
+    } else {
+      showFatal("Error starting Python: " + msg);
+    }
   }
 }
 
-if (window.loadPyodide) {
-  initPyodide();
-} else if (window._pyodideLoadFailed) {
-  showFatal("Could not download Python from the internet.");
-} else {
-  document.addEventListener("pyodideScriptLoaded", initPyodide, { once: true });
-  document.addEventListener("pyodideScriptFailed", () => {
-    showFatal("Could not download Python from the internet.");
-  }, { once: true });
-}
+initPyodide();
 
 async function runCode() {
   if (!pyodide) return;
