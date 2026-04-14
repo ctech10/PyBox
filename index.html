@@ -8,7 +8,29 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script>
+  // Try main CDN, fall back to alternate if blocked
+  (function loadPyodideScript() {
+    const sources = [
+      "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js",
+      "https://pyodide-cdn2.iodide.io/v0.26.2/full/pyodide.js"
+    ];
+    let i = 0;
+    function tryNext() {
+      if (i >= sources.length) {
+        window._pyodideLoadFailed = true;
+        document.dispatchEvent(new Event("pyodideScriptFailed"));
+        return;
+      }
+      const s = document.createElement("script");
+      s.src = sources[i++];
+      s.onload = () => document.dispatchEvent(new Event("pyodideScriptLoaded"));
+      s.onerror = tryNext;
+      document.head.appendChild(s);
+    }
+    tryNext();
+  })();
+</script>
 <style>
   :root {
     --bg: #fefaf4;
@@ -357,16 +379,72 @@ function append(text, cls) {
 }
 
 let pyodide = null;
-async function initPyodide() {
-  pyodide = await loadPyodide();
-  pyodide.setStdout({ batched: (s) => append(s + "\n") });
-  pyodide.setStderr({ batched: (s) => append(s + "\n", "err") });
-  await pyodide.runPythonAsync(TURTLE_PY);
-  statusEl.textContent = "Python ready ✓";
-  statusEl.style.color = "var(--ok)";
-  runBtn.disabled = false;
+
+function setStatus(text, color) {
+  statusEl.textContent = text;
+  statusEl.style.color = color || "#888";
 }
-initPyodide();
+
+function showFatal(msg) {
+  setStatus("⚠ " + msg, "#c0392b");
+  outputEl.innerHTML = "";
+  append("PyBox could not start.\n\n", "err");
+  append(msg + "\n\n");
+  append("Try:\n");
+  append("  • Refresh the page (Cmd/Ctrl + Shift + R)\n");
+  append("  • Check your internet connection\n");
+  append("  • Try a different network (some schools block CDNs)\n");
+  append("  • Use a modern browser (Chrome, Safari, Firefox, Edge)\n");
+}
+
+async function initPyodide() {
+  if (window._pyodideLoadFailed) {
+    showFatal("Could not download Python from the internet.");
+    return;
+  }
+
+  // 25s warning if Pyodide download is slow
+  const slowWarn = setTimeout(() => {
+    if (!pyodide) setStatus("Still loading… (slow connection?)", "#c97a00");
+  }, 25000);
+
+  // 60s hard timeout
+  const hardTimeout = setTimeout(() => {
+    if (!pyodide) showFatal("Loading Python timed out after 60 seconds.");
+  }, 60000);
+
+  try {
+    setStatus("Downloading Python… (~10 MB, first time only)");
+    pyodide = await loadPyodide();
+    clearTimeout(slowWarn);
+    clearTimeout(hardTimeout);
+
+    pyodide.setStdout({ batched: (s) => append(s + "\n") });
+    pyodide.setStderr({ batched: (s) => append(s + "\n", "err") });
+
+    setStatus("Setting up turtle…");
+    await pyodide.runPythonAsync(TURTLE_PY);
+
+    setStatus("Python ready ✓", "var(--ok)");
+    runBtn.disabled = false;
+  } catch (err) {
+    clearTimeout(slowWarn);
+    clearTimeout(hardTimeout);
+    console.error("PyBox init failed:", err);
+    showFatal("Error starting Python: " + (err.message || err));
+  }
+}
+
+if (window.loadPyodide) {
+  initPyodide();
+} else if (window._pyodideLoadFailed) {
+  showFatal("Could not download Python from the internet.");
+} else {
+  document.addEventListener("pyodideScriptLoaded", initPyodide, { once: true });
+  document.addEventListener("pyodideScriptFailed", () => {
+    showFatal("Could not download Python from the internet.");
+  }, { once: true });
+}
 
 async function runCode() {
   if (!pyodide) return;
