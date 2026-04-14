@@ -169,6 +169,11 @@
     font-size: 11px; color: #888; margin-top: 10px;
     padding-top: 10px; border-top: 1px solid var(--border);
   }
+  .menu-items { display: flex; flex-direction: column; gap: 6px; }
+  .menu-items button {
+    width: 100%; text-align: left; background: var(--muted);
+    padding: 10px 14px;
+  }
   .floating-controls {
     position: fixed; bottom: 24px; right: 24px;
     display: none; gap: 10px; z-index: 50;
@@ -185,17 +190,25 @@
   <h1>🐍 PyBox</h1>
   <span id="status">Loading Python…</span>
   <div class="toolbar">
-    <button id="saveProjBtn">💾 Save</button>
-    <button id="openProjBtn">📁 Projects</button>
     <button id="shareBtn">🔗 Share</button>
-    <button id="downloadBtn">⬇ File</button>
-    <button id="uploadBtn">⬆ File</button>
-    <button id="imageBtn">🖼 Image</button>
-    <button id="hideCodeBtn">👁 Hide Code</button>
     <button id="layoutBtn">⇄ Layout</button>
+    <button id="menuBtn">☰ Menu</button>
     <input type="file" id="fileInput" accept=".py,text/plain" style="display:none" />
   </div>
 </header>
+<div id="menu" class="panel hidden">
+  <div class="panel-header">
+    <span>☰ Menu</span>
+    <button class="panel-close" id="closeMenuBtn">✕</button>
+  </div>
+  <div class="menu-items">
+    <button id="saveProjBtn">💾 Save project</button>
+    <button id="openProjBtn">📁 My projects</button>
+    <button id="imageBtn">🖼 Image from URL</button>
+    <button id="downloadBtn">⬇ Download .py</button>
+    <button id="uploadBtn">⬆ Upload .py</button>
+  </div>
+</div>
 <div id="floatingControls" class="floating-controls">
   <button id="clearOutBtn2">Clear Output</button>
   <button id="runBtn2" class="primary">▶ Run</button>
@@ -482,6 +495,7 @@ const statusEl = document.getElementById("status");
 const runBtn = document.getElementById("runBtn");
 const mainEl = document.getElementById("main");
 const fileInput = document.getElementById("fileInput");
+const floatingControls = document.getElementById("floatingControls");
 
 function append(text, cls) {
   const span = document.createElement("span");
@@ -566,15 +580,24 @@ async function runCode() {
 document.getElementById("runBtn").addEventListener("click", runCode);
 document.getElementById("clearOutBtn").addEventListener("click", () => outputEl.innerHTML = "");
 
-document.getElementById("layoutBtn").addEventListener("click", () => {
-  if (mainEl.classList.contains("layout-bottom")) {
-    mainEl.classList.replace("layout-bottom", "layout-right");
-    localStorage.setItem("pybox_layout", "right");
-  } else {
-    mainEl.classList.replace("layout-right", "layout-bottom");
-    localStorage.setItem("pybox_layout", "bottom");
-  }
+// Layout cycles: bottom → right → full (hide code) → bottom
+const LAYOUTS = ["bottom", "right", "full"];
+let layoutIdx = 0;
+
+function applyLayout() {
+  mainEl.classList.remove("layout-bottom", "layout-right", "hide-code");
+  const l = LAYOUTS[layoutIdx];
+  if (l === "bottom") mainEl.classList.add("layout-bottom");
+  else if (l === "right") mainEl.classList.add("layout-right");
+  else if (l === "full") mainEl.classList.add("layout-bottom", "hide-code");
+  floatingControls.classList.toggle("show", l === "full");
+  localStorage.setItem("pybox_layout_idx", String(layoutIdx));
   setTimeout(() => editor.refresh(), 50);
+}
+
+document.getElementById("layoutBtn").addEventListener("click", () => {
+  layoutIdx = (layoutIdx + 1) % LAYOUTS.length;
+  applyLayout();
 });
 
 document.getElementById("downloadBtn").addEventListener("click", () => {
@@ -602,10 +625,11 @@ document.querySelectorAll(".example").forEach(btn => {
   });
 });
 
-const savedLayout = localStorage.getItem("pybox_layout");
-if (savedLayout === "right") {
-  mainEl.classList.replace("layout-bottom", "layout-right");
+const savedLayoutIdx = parseInt(localStorage.getItem("pybox_layout_idx") || "0", 10);
+if (!isNaN(savedLayoutIdx) && savedLayoutIdx >= 0 && savedLayoutIdx < LAYOUTS.length) {
+  layoutIdx = savedLayoutIdx;
 }
+applyLayout();
 
 // ---------- Projects (saved in browser, each with a stable id) ----------
 function genId() {
@@ -767,19 +791,30 @@ function handleShareHash() {
 }
 handleShareHash();
 
-// ---------- Hide / Show Code ----------
-const hideCodeBtn = document.getElementById("hideCodeBtn");
-const floatingControls = document.getElementById("floatingControls");
-hideCodeBtn.addEventListener("click", () => {
-  const hidden = mainEl.classList.toggle("hide-code");
-  hideCodeBtn.textContent = hidden ? "👁 Show Code" : "👁 Hide Code";
-  floatingControls.classList.toggle("show", hidden);
-  setTimeout(() => editor.refresh(), 50);
+// ---------- Menu dropdown ----------
+const menuEl = document.getElementById("menu");
+
+document.getElementById("menuBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  menuEl.classList.toggle("hidden");
+});
+document.getElementById("closeMenuBtn").addEventListener("click", () => {
+  menuEl.classList.add("hidden");
+});
+menuEl.querySelectorAll(".menu-items button").forEach(btn => {
+  btn.addEventListener("click", () => menuEl.classList.add("hidden"));
+});
+document.addEventListener("click", (e) => {
+  if (!menuEl.classList.contains("hidden")
+      && !menuEl.contains(e.target)
+      && e.target.id !== "menuBtn") {
+    menuEl.classList.add("hidden");
+  }
 });
 
+// Floating Run/Clear (used in full-view layout)
 document.getElementById("runBtn2").addEventListener("click", runCode);
 document.getElementById("clearOutBtn2").addEventListener("click", () => outputEl.innerHTML = "");
-// Mirror runBtn enabled state to runBtn2
 const runBtn2 = document.getElementById("runBtn2");
 const observer = new MutationObserver(() => { runBtn2.disabled = runBtn.disabled; });
 observer.observe(runBtn, { attributes: true, attributeFilter: ["disabled"] });
